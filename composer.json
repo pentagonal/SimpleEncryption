@@ -1,5 +1,5 @@
 {
-    "name": "pentagonal/simple-encryption",
+    "name": "pentagonal/simple_encrypt",
     "description": "Simple Encryption utility",
     "keywords": ["Encryption", "Library", "Utility", "openSSL"],
     "homepage": "http://www.pentagonal.org/",
