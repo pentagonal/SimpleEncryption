@@ -41,7 +41,7 @@ Get Install on here : [https://getcomposer.org](https://getcomposer.org) and ins
 ```json
 {
   "require": {
-        "pentagonal/simple-encryption" : "~1.0"
+        "pentagonal/simple_encrypt" : "~1.0"
   }
 }
 ```
