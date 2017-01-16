@@ -46,6 +46,12 @@ Get Install on here : [https://getcomposer.org](https://getcomposer.org) and ins
 }
 ```
 
+Or directly install via `terminal`
+
+```bash
+composer require pentagonal/simple_encrypt
+```
+
 ## Requirements
 
 This library require php 5.3.2 or later. Suggest to enable `openssl` on your php configuration.
