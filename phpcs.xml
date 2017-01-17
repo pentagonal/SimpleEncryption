@@ -13,9 +13,6 @@
     <rule ref="Generic.Files.LineEndings"/>
     <!-- array must be use short syntax array() == [] -->
     <rule ref="Generic.Arrays.DisallowLongArraySyntax"/>
-    <!-- Path To Check
-        // Check Only Applications Directory
-        // Ignore View, Cache, Session, Logs & Data
-    -->
+    <!-- Path To Check -->
     <file>./src</file>
 </ruleset>
