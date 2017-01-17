@@ -1,8 +1,6 @@
 <?php
 namespace Pentagonal\SimpleEncryption;
 
-use Pentagonal\SimpleEncryption\Cryptography\Sha256;
-
 /**
  * Encryption Instance class
  *
@@ -39,6 +37,122 @@ class Encryption
      */
     const DEFAULT_CHIPPER      = 'AES-256-CBC';
 
+    /* --------------------------------------------------------------------------------*
+     |                                  ENCODING                                       |
+     |---------------------------------------------------------------------------------|
+     */
+
+    /**
+     * Encode the values using base64_encode and replace some string
+     * and could decode @uses safeBase64Decode()
+     *
+     * @param  string $string
+     * @return string
+     */
+    public static function safeBase64Encode($string)
+    {
+        $data = base64_encode($string);
+        $data = str_replace(['+', '/', '='], ['-', '_', ''], $data);
+        return $data;
+    }
+
+    /**
+     * Decode the safeBase64Encode() of the string values
+     *
+     * @see safeBase64Encode()
+     *
+     * @param  string $string
+     * @return string
+     */
+    public static function safeBase64Decode($string)
+    {
+        $data = str_replace(['-', '_'], ['+', '/'], $string);
+        $mod4 = strlen($data) % 4;
+        if ($mod4) {
+            $data .= substr('====', $mod4);
+        }
+        return base64_decode($data);
+    }
+
+    /* --------------------------------------------------------------------------------*
+     |                              Extended Helpers                                   |
+     |---------------------------------------------------------------------------------|
+     */
+
+    /**
+     * Rotate each string characters by n positions in ASCII table
+     * To encode use positive n, to decode - negative.
+     * With n = 13 (ROT13), encode and decode n can be positive.
+     * @see  {@link http://php.net/str_rot13}
+     *
+     * @param  string  $string
+     * @param  integer $n
+     * @return string
+     */
+    public static function rotate($string, $n = 13)
+    {
+        if (!is_string($string)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Parameter 1 must be as string! %s given.',
+                    gettype($string)
+                )
+            );
+        }
+
+        $length = strlen($string);
+        $result = '';
+
+        for ($i = 0; $i < $length; $i++) {
+            $ascii = ord($string{$i});
+
+            $rotated = $ascii;
+
+            if ($ascii > 64 && $ascii < 91) {
+                $rotated += $n;
+                $rotated > 90 && $rotated += -90 + 64;
+                $rotated < 65 && $rotated += -64 + 90;
+            } elseif ($ascii > 96 && $ascii < 123) {
+                $rotated += $n;
+                $rotated > 122 && $rotated += -122 + 96;
+                $rotated < 97 && $rotated  += -96 + 122;
+            }
+
+            $result .= chr($rotated);
+        }
+
+        return $result;
+    }
+
+    protected static function hashStringContainer($string)
+    {
+        $hash_algorithms = hash_algos();
+        $priority = [
+            'sha512',
+            'sha384',
+            'ripemd320',
+            'sha256',
+            'ripemd256',
+            'sha224',
+            'ripemd160',
+            'sha1',
+        ];
+        $chosen_algorithm = null;
+        foreach ($priority as $algorithm) {
+            if (in_array($algorithm, $hash_algorithms)) {
+                $chosen_algorithm = $algorithm;
+                break;
+            }
+        }
+        if (!$chosen_algorithm) {
+            $hash = sha1($string);
+        } else {
+            $hash = hash($chosen_algorithm, $string);
+        }
+
+        return "$hash";
+    }
+
     /**
      * Create Pass Key
      *
@@ -70,13 +184,14 @@ class Encryption
          * Set Key
          * ------------------------------------
          */
-        $key       = pack('H*', Sha256::hash($serialize_key));
 
+        $key       = pack('H*', self::hashStringContainer($serialize_key));
         return [
             $serialize_key,
-            Sha256::safeBase64Encode(str_pad($key, 24, "\0", STR_PAD_RIGHT))
+            self::safeBase64Encode(str_pad($key, 24, "\0", STR_PAD_RIGHT))
         ];
     }
+
 
     /* --------------------------------------------------------------------------------*
      |                              Encryption openSSL                                 |
@@ -191,7 +306,8 @@ class Encryption
 
         // encode json
         $microtime = microtime(true);
-        $iv = Sha256::base64Encode($crypt_arr[2]);
+        $iv = self::safeBase64Encode($crypt_arr[2]);
+
         $json_value = json_encode([
             'micro'  => $microtime,
             'method' => $crypt_arr[1],
@@ -201,7 +317,7 @@ class Encryption
 
         // save as bse64 encode safe
         $crypt_text = trim(
-            Sha256::safeBase64Encode(
+            self::safeBase64Encode(
                 $json_value .
                 json_encode([
                     sha1($microtime . $passKey[1] . $iv)
@@ -215,10 +331,11 @@ class Encryption
          * ------------------------------------
          */
         $pos = abs(round(strlen($passKey[0]) / 3));
+        $separator = self::safeBase64Encode(sha1($passKey[1]) . self::OPENSSL_MIDDLE);
         if (strlen($crypt_text) > $pos) {
-            return substr_replace($crypt_text, self::OPENSSL_MIDDLE . $pos, $pos, 0);
+            return substr_replace($crypt_text, $separator . $pos, $pos, 0);
         } else {
-            return substr_replace($crypt_text, self::OPENSSL_MIDDLE . $pos, 2, 0);
+            return substr_replace($crypt_text, $separator . $pos, 2, 0);
         }
     }
 
@@ -228,27 +345,31 @@ class Encryption
             return null;
         }
 
-        /**
-         * Using Alternative Encryption
-         * if mCrypt not loaded
-         */
-        if (! extension_loaded('openssl')) {
-            return static::altDecrypt($value, $hash);
-        }
-
         $passKey          = self::createPassKey($hash);
         $pos              = abs(round(strlen($passKey[0]) / 3));
         $the_val_pos      = (strlen($value) > $pos);
         $length_to_check  =  $the_val_pos ? $pos : 2;
-        $length           = strlen(self::OPENSSL_MIDDLE . $pos);
+        $separator_openssl= self::safeBase64Encode(sha1($passKey[1]) . self::OPENSSL_MIDDLE);
+        $length           = strlen($separator_openssl . $pos);
         $string_to_check  = substr($value, $length_to_check, $length);
 
-        if ($string_to_check != self::OPENSSL_MIDDLE . $pos) {
-            if ($string_to_check != self::STANDARD_MIDDLE . $pos) {
+        if ($string_to_check != $separator_openssl . $pos) {
+            $separator_middle = self::safeBase64Encode(sha1($passKey[1]) . self::STANDARD_MIDDLE);
+            $length_2         = strlen($separator_middle . $pos);
+            $string_to_check_2 = substr($value, $length_to_check, $length_2);
+            if ($string_to_check_2 != $separator_middle . $pos) {
                 return null;
             }
 
             return static::altDecrypt($value, $hash);
+        }
+
+        /**
+         * Using Alternative Encryption
+         * if openssl not loaded
+         */
+        if (! extension_loaded('openssl')) {
+            return null;
         }
 
         /**
@@ -263,7 +384,7 @@ class Encryption
             return null;
         }
 
-        $value = Sha256::safeBase64Decode($value);
+        $value = self::safeBase64Decode($value);
         $value = explode('[', $value);
         if (count($value) <> 2) {
             return null;
@@ -290,15 +411,13 @@ class Encryption
 
         $method = $json_decode_value['method'];
         $value  = $json_decode_value['value'];
-        $iv     = Sha256::base64Decode($json_decode_value['iv']);
+        $iv     = self::safeBase64Decode($json_decode_value['iv']);
         unset($json_decode_info, $json_decode_value);
 
-        if (strlen($value) <= strlen($passKey[1])) {
-            return null;
-        }
         if (strlen($value) < 3) {
             return null;
         }
+
         $decrypted_text = self::decryptOpenSSl($passKey[1], $value, $method, $iv);
         if (!$decrypted_text || strlen($decrypted_text) < 2) {
             return null;
@@ -326,10 +445,14 @@ class Encryption
          * Doing convert string
          * ------------------------------------
          */
-        $crypt_text = Sha256::rotate($crypt_text, (strlen($hash) % 13));
+        $crypt_text = self::rotate($crypt_text, (strlen($hash) % 13));
         $add = 0;
-        $iv = Sha256::safeBase64Decode(sha1($method . @time()));
-        $crypt_text = substr_replace($crypt_text, $iv, strlen($hash), 0);
+        $iv = self::safeBase64Decode(sha1($method . @time()));
+        if (strlen($hash) < strlen($crypt_text)) {
+            $crypt_text = substr_replace($crypt_text, $iv, strlen($hash), 0);
+        } else {
+            $crypt_text = $crypt_text . $iv;
+        }
         $div = strlen($crypt_text) / strlen($hash);
         $new_pass = '';
         while ($add <= $div) {
@@ -348,12 +471,21 @@ class Encryption
         }
 
         return [
-            Sha256::base64Encode($ascii),
+            self::safeBase64Encode($ascii),
             $method, // for what?
             $iv
         ];
     }
 
+    /**
+     * Decrypt string container crypt text
+     *
+     * @param string $hash
+     * @param string $crypt_text
+     * @param string $method
+     * @param string $iv
+     * @return null|string
+     */
     private static function decryptStandard(
         $hash,
         $crypt_text,
@@ -372,7 +504,7 @@ class Encryption
         /**
          * Doing decode of input encryption
          */
-        $crypt_text = Sha256::safeBase64Decode($crypt_text);
+        $crypt_text = self::safeBase64Decode($crypt_text);
         $enc_arr  = str_split($crypt_text);
         $add = 0;
         $div = strlen($crypt_text) / strlen($hash);
@@ -395,6 +527,7 @@ class Encryption
          * ------------------------------ */
         // unpack
         $unpack     = unpack('a*', trim($ascii));
+
         /**
          * if empty return here
          */
@@ -405,12 +538,16 @@ class Encryption
         // implode the unpacking array
         $unpack = implode('', (array) $unpack);
         $iv     = substr($iv, strlen($method));
-        $sub_iv = substr($unpack, -strlen($iv));
+        if (strlen($hash) < strlen($unpack)) {
+            $sub_iv = substr($unpack, strlen($hash), strlen($iv));
+        } else {
+            $sub_iv = substr($unpack, -strlen($iv));
+        }
         if ($sub_iv !== $iv) {
             return null;
         }
         $crypt_text = substr_replace($unpack, '', strlen($hash), strlen($iv));
-        return Sha256::rotate($crypt_text, -(strlen($hash) % 13));
+        return self::rotate($crypt_text, -(strlen($hash) % 13));
     }
 
     /**
@@ -449,7 +586,7 @@ class Encryption
         );
 
         $microtime = microtime(true);
-        $iv = Sha256::base64Encode($method . $crypt_arr[2]);
+        $iv = self::safeBase64Encode($method . $crypt_arr[2]);
         $json_value = json_encode([
             'micro'  => $microtime,
             'method' => $crypt_arr[1],
@@ -459,7 +596,7 @@ class Encryption
 
         // save as bse64 encode safe
         $crypt_text = trim(
-            Sha256::safeBase64Encode(
+            self::safeBase64Encode(
                 $json_value .
                 json_encode([
                     sha1($microtime . $passKey[1] . $iv)
@@ -473,10 +610,11 @@ class Encryption
          * ------------------------------------
          */
         $pos = abs(round(strlen($passKey[0]) / 3));
+        $separator = self::safeBase64Encode(sha1($passKey[1]) . self::STANDARD_MIDDLE);
         if (strlen($crypt_text) > $pos) {
-            return substr_replace($crypt_text, self::STANDARD_MIDDLE . $pos, $pos, 0);
+            return substr_replace($crypt_text, $separator . $pos, $pos, 0);
         } else {
-            return substr_replace($crypt_text, self::STANDARD_MIDDLE . $pos, 2, 0);
+            return substr_replace($crypt_text, $separator . $pos, 2, 0);
         }
     }
 
@@ -497,17 +635,22 @@ class Encryption
         $pos              = abs(round(strlen($passKey[0]) / 3));
         $the_val_pos      = (strlen($value) > $pos);
         $length_to_check  =  $the_val_pos ? $pos : 2;
-        $length           = strlen(self::OPENSSL_MIDDLE . $pos);
+        $separator_middle = self::safeBase64Encode(sha1($passKey[1]) . self::STANDARD_MIDDLE);
+        $length           = strlen($separator_middle . $pos);
         $string_to_check  = substr($value, $length_to_check, $length);
 
         /**
          * Check if use OpenSSSL encryption or invalid value
          */
-        if ($string_to_check != self::STANDARD_MIDDLE . $pos) {
+        if ($string_to_check != $separator_middle . $pos) {
+            $separator_openssl= self::safeBase64Encode(sha1($passKey[1]) . self::OPENSSL_MIDDLE);
+            $length_2         = strlen($separator_openssl . $pos);
+            $string_to_check_2 = substr($value, $length_to_check, $length_2);
             if (!extension_loaded('openssl')
-                || $string_to_check != self::OPENSSL_MIDDLE . $pos) {
+                || $string_to_check_2 != $separator_openssl . $pos) {
                 return null;
             }
+
             return static::decrypt($value, $hash);
         }
 
@@ -523,7 +666,7 @@ class Encryption
             return null;
         }
 
-        $value = Sha256::safeBase64Decode($value);
+        $value = self::safeBase64Decode($value);
         $value = explode('[', $value);
         if (count($value) <> 2) {
             return null;
@@ -550,16 +693,12 @@ class Encryption
 
         $method = $json_decode_value['method'];
         $value  = $json_decode_value['value'];
-        $iv     = Sha256::base64Decode($json_decode_value['iv']);
+        $iv     = self::safeBase64Decode($json_decode_value['iv']);
         unset($json_decode_info, $json_decode_value);
-        if (strlen($value) <= strlen($passKey[1])) {
-            return null;
-        }
 
         if (strlen($value) < 3) {
             return null;
         }
-
         $decrypted_text = self::decryptStandard($passKey[1], $value, $method, $iv);
         if (!$decrypted_text || strlen($decrypted_text) < 2) {
             return null;

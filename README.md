@@ -1,5 +1,5 @@
 # Pentagonal Simple Encryption
-Another Encryption Helper
+Another Small Encryption Helper
 
 [![Build Status](https://travis-ci.org/pentagonal/SimpleEncryption.svg?branch=master)](https://travis-ci.org/pentagonal/SimpleEncryption)
 
@@ -54,7 +54,7 @@ composer require pentagonal/simple_encrypt
 
 ## Requirements
 
-This library require php 5.3.2 or later. Suggest to enable `openssl` on your php configuration.
+This library require php 5.4.0 or later. Suggest to enable `openssl` on your php configuration.
 
 ## License
 
