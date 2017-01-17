@@ -2,7 +2,7 @@
     "name": "pentagonal/simple_encrypt",
     "description": "Simple Encryption utility",
     "keywords": ["Encryption", "Library", "Utility", "openSSL"],
-    "homepage": "http://www.pentagonal.org/",
+    "homepage": "https://www.pentagonal.org/",
     "type": "library",
     "version": "1.0.0",
     "license": "MIT",
