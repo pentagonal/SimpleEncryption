@@ -204,7 +204,7 @@ class Encryption
      * @param string $key
      * @param string $crypt_text
      * @param string $method
-     * @return string
+     * @return array
      */
     private static function cryptOpenSSl(
         $key,
